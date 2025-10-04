@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="gu">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Income & Expense Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <style>
+        :root {
+            --accent: #0b79d0;
+            --bg: #f6f7fb;
+            --card: #ffffff
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: Segoe UI,Roboto,Arial
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: #222
+        }
+
+        .wrap {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 12px
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 18px;
+            text-align: center
+        }
+
+        .card {
+            background: var(--card);
+            padding: 14px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-top: 12px
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(2,1fr);
+            gap: 10px
+        }
+
+        .dash-item {
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer
+        }
+
+        .small {
+            font-size: 13px;
+            color: #666
+        }
+
+        .big {
+            font-size: 18px;
+            font-weight: 700
+        }
+
+        .hidden {
+            display: none
+        }
+
+        label {
+            font-size: 13px;
+            color: #444;
+            margin-top: 6px
+        }
+
+        input, select, textarea {
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            width: 100%
+        }
+
+        button {
+            background: var(--accent);
+            color: #fff;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px
+        }
+
+        .muted {
+            background: #ddd;
+            color: #333
+        }
+
+        .secondary {
+            background: #e6eef9;
+            color: var(--accent)
+        }
+
+        .backbtn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px; /* space between arrow and text */
+            padding: 10px 16px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(180deg, #f1f5ff, #e3eafc);
+            color: #0b4da0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+
+            .backbtn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            }
+
+            .backbtn .mi {
+                font-size: 20px; /* arrow size */
+                line-height: 1;
+            }
+
+        /* Entries card style */
+        .entry-card {
+            background: #fdfdfd;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 10px;
+            margin: 6px 0;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.05)
+        }
+
+        .entry-top {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px
+        }
+
+        .entry-note {
+            font-size: 12px;
+            color: #555;
+            margin-top: 4px
+        }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 8px
+        }
+
+            .filters select, .filters input {
+                flex: 1
+            }
+        /* Balance Card */
+        .stat-card.balance {
+            background: linear-gradient(180deg, #f1f5ff, #e3eafc);
+            color: #0b4da0;
+            cursor: pointer;
+        }
+
+            .stat-card.balance .big {
+                color: #0b4da0;
+            }
+
+            /* Positive Balance */
+            .stat-card.balance.positive {
+                background: linear-gradient(180deg, #e8fdf3, #d6f5e6);
+                color: #0c8b4f;
+            }
+
+                .stat-card.balance.positive .big {
+                    color: #0c8b4f;
+                }
+
+            /* Negative Balance */
+            .stat-card.balance.negative {
+                background: linear-gradient(180deg, #ffeaea, #ffd6d6);
+                color: #b71c1c;
+            }
+
+                .stat-card.balance.negative .big {
+                    color: #b71c1c;
+                }
+
+        /* Basic dash-item style (modify to match your app theme) */
+        .dash-item {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            background: #ffffff;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+            transition: transform .12s ease, box-shadow .12s ease;
+            min-width: 120px;
+        }
+
+            .dash-item.secondary {
+                background: linear-gradient(180deg, #f7fbff, #eef6ff);
+                color: #0b4da0;
+            }
+
+            .dash-item.big-icon .mi {
+                font-size: 40px;
+                line-height: 1;
+                display: block;
+            }
+
+            .dash-item .label {
+                font-size: 14px;
+                font-weight: 600;
+            }
+
+            .dash-item:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 30px rgba(10,37,100,0.12);
+            }
+        .dash-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px; /* gap between buttons */
+            margin: 10px 0;
+        }
+
+        .dash-item.big-icon {
+            flex: 1; /* equal width buttons */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 10px;
+            border-radius: 14px;
+            background: linear-gradient(180deg, #f9f9f9, #ececec);
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+            .dash-item.big-icon .mi {
+                font-size: 28px;
+                margin-bottom: 4px;
+                color: #1976d2;
+            }
+
+            .dash-item.big-icon:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            }
+
+
+
+
+        /* Make it responsive (smaller on mobile) */
+        @media (max-width: 480px) {
+            .dash-item {
+                min-width: 100px;
+                padding: 10px;
+                border-radius: 10px;
+            }
+
+                .dash-item.big-icon .mi {
+                    font-size: 32px;
+                }
+
+                .dash-item .label {
+                    font-size: 13px;
+                }
+        }
+        /* Expense Card */
+        .stat-card.expense {
+            background: linear-gradient(180deg, #ffeaea, #ffd6d6);
+            color: #b71c1c;
+        }
+
+            .stat-card.expense .big {
+                color: #b71c1c;
+            }
+
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>Income & Expense Tracker (Gujarati)</h1>
+
+        <!-- Dashboard -->
+        <div id="pageDashboard" class="card">
+            <div class="small"></div>
+            <div class="dashboard">
+                <div class="dash-item" style="background:#f6fbff">
+                    <div class="stat-card income">
+                        <span class="mi material-icons">trending_up</span>
+                        <div class="small">કુલ આવક</div>
+                        <div id="totalIncome" class="big">₹0</div>
+                    </div>
+                </div>
+                <div class="dash-item" style="background:#fff6f6">
+                    <div class="stat-card expense">
+                        <span class="mi material-icons">trending_down</span>
+                        <div class="small">કુલ ખર્ચ</div>
+                        <div id="totalExpense" class="big">₹0</div>
+                    </div>
+                </div>
+                <div class="dash-item" id="balanceCard" style="background:#f7fff7;grid-column:span 2">
+                    <!-- Balance Card -->
+                    <div class="stat-card balance" id="balanceCard">
+                        <span class="mi material-icons">account_balance_wallet</span>
+                        <div class="small">બેલેન્સ</div>
+                        <div id="balanceValue" class="big">●●●</div>
+                    </div>
+
+                </div>
+                <button class="dash-item secondary big-icon" id="btnEntries" type="button">
+                    <span class="mi material-icons">paid</span>
+                    <span class="label">Transaction</span>
+                </button>
+                <!-- Settings Button with Icon -->
+                <button class="dash-item secondary big-icon" id="btnSettings">
+                    <span class="mi material-icons">settings</span>
+                    <span class="label">Settings</span>
+                </button>
+
+                <button class="dash-item secondary big-icon" id="btnAddEntry" style="grid-column:span 2">
+                    <span class="mi material-icons">add_circle</span>
+                    <span class="label">Add Income &amp; Expense</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Entries Page -->
+        <div id="pageEntries" class="card hidden">
+            <button class="backbtn" onclick="goBack()">←Back</button>
+            <div class="small">Entries</div>
+            <div class="filters">
+                <select id="filterType"><option value="all">બધા</option><option value="income">Income</option><option value="expense">Expense</option></select>
+                <select id="filterSource"></select>
+                <input type="date" id="filterFrom" />
+                <input type="date" id="filterTo" />
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+                <button id="applyFilter" class="secondary" style="flex:1">Apply</button>
+                <button id="clearFilter" class="muted" style="flex:1">Clear</button>
+                <button id="exportPDF" style="flex:1">Export PDF</button>
+            </div>
+            <div id="entriesList"></div>
+        </div>
+
+        <!-- Settings Page -->
+        <div id="pageSettings" class="card hidden">
+            <button class="backbtn" onclick="goBack()">←Back</button>
+            <div class="small">Settings - Sources</div>
+
+            <!-- Add New Sources -->
+            <input id="newIncomeSource" placeholder="નવું Income Source" />
+            <button id="addIncomeSource" class="secondary">Add Income Source</button>
+            <input id="newExpenseSource" placeholder="નવું Expense Source" />
+            <button id="addExpenseSource" class="secondary">Add Expense Source</button>
+
+            <!-- Lists -->
+            <div style="margin-top:10px">
+                <div class="small">Income Sources</div>
+                <ul id="incomeSourcesList"></ul>
+
+                <div class="small">Expense Sources</div>
+                <ul id="expenseSourcesList"></ul>
+            </div>
+        </div>
+
+        <!-- Add Entry Page -->
+        <div id="pageAddEntry" class="card hidden">
+            <!-- Back Button -->
+            <button class="backbtn" onclick="goBack()">
+                <span class="mi material-icons">arrow_back</span>
+                Back
+            </button>
+
+            <div class="small">Add Entry</div>
+            <form id="entryForm">
+                <label>ટાઇપ</label>
+                <select id="entryType"><option value="income">Income</option><option value="expense">Expense</option></select>
+                <label>તારીખ</label><input id="entryDate" type="date" required />
+                <label>સોર્સ</label><select id="entrySource"></select>
+                <label>રકમ (₹)</label><input id="entryAmount" type="number" step="0.01" required />
+                <label>નોટ</label><textarea id="entryNote" rows="2"></textarea>
+                <button type="submit">Save Entry</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEYS = { entries: 'ie_entries_v2', incomeSources: 'ie_income_sources_v2', expenseSources: 'ie_expense_sources_v2' };
+        const defaults = { income: ['Salary', 'Business'], expense: ['Food', 'Rent', 'Transport'] };
+        const $ = id => document.getElementById(id); const money = v => '₹' + Number(v || 0).toFixed(2);
+        function load(k, f) { try { return JSON.parse(localStorage.getItem(k)) || f } catch (e) { return f } }; function save(k, v) { localStorage.setItem(k, JSON.stringify(v)) };
+        let entries = load(STORAGE_KEYS.entries, []); let incomeSources = load(STORAGE_KEYS.incomeSources, defaults.income); let expenseSources = load(STORAGE_KEYS.expenseSources, defaults.expense);
+
+        function showPage(pid) { ['pageDashboard', 'pageEntries', 'pageSettings', 'pageAddEntry'].forEach(id => $(id).classList.add('hidden')); $(pid).classList.remove('hidden'); }
+        function goBack() { showPage('pageDashboard'); }
+
+        $('btnEntries').onclick = () => { showPage('pageEntries'); renderEntries(); populateFilterSources(); };
+        $('btnSettings').onclick = () => { showPage('pageSettings'); renderSources(); };
+        $('btnAddEntry').onclick = () => { showPage('pageAddEntry'); populateSourceSelect(); };
+
+        function renderSources() {
+            $('incomeSourcesList').innerHTML = '';
+            $('expenseSourcesList').innerHTML = '';
+
+            // Helper function
+            function createDeleteButton(onclick) {
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.style.fontSize = '0.7em';      // extra small font
+                delBtn.style.padding = '2px 6px';     // chhoto button
+                delBtn.style.marginLeft = '8px';
+                delBtn.style.height = '18px';         // chhoti height
+                delBtn.style.lineHeight = '14px';
+                delBtn.onclick = onclick;
+                return delBtn;
+            }
+
+            // Income Sources
+            incomeSources.forEach((s, i) => {
+                const li = document.createElement('li');
+                li.style.display = 'flex';
+                li.style.alignItems = 'center';
+                li.textContent = s;
+
+                li.appendChild(createDeleteButton(() => {
+                    if (confirm(`Delete income source "${s}"?`)) {
+                        incomeSources.splice(i, 1);
+                        save(STORAGE_KEYS.incomeSources, incomeSources);
+                        renderSources();
+                        populateSourceSelect();
+                        populateFilterSources();
+                    }
+                }));
+
+                $('incomeSourcesList').appendChild(li);
+            });
+
+            // Expense Sources
+            expenseSources.forEach((s, i) => {
+                const li = document.createElement('li');
+                li.style.display = 'flex';
+                li.style.alignItems = 'center';
+                li.textContent = s;
+
+                li.appendChild(createDeleteButton(() => {
+                    if (confirm(`Delete expense source "${s}"?`)) {
+                        expenseSources.splice(i, 1);
+                        save(STORAGE_KEYS.expenseSources, expenseSources);
+                        renderSources();
+                        populateSourceSelect();
+                        populateFilterSources();
+                    }
+                }));
+
+                $('expenseSourcesList').appendChild(li);
+            });
+        }
+
+
+        function populateSourceSelect() { const sel = $('entrySource'); sel.innerHTML = ''; const list = $('entryType').value === 'income' ? incomeSources : expenseSources; list.forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
+        function populateFilterSources() { const sel = $('filterSource'); sel.innerHTML = '<option value="all">બધા Sources</option>';[...incomeSources, ...expenseSources].forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
+
+        function updateDashboard() { let inc = entries.filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0); let exp = entries.filter(e => e.type === 'expense').reduce((s, e) => s + Number(e.amount), 0); $('totalIncome').textContent = money(inc); $('totalExpense').textContent = money(exp); $('balanceValue').dataset.val = inc - exp; }
+        function renderEntries(list = entries) { const box = $('entriesList'); box.innerHTML = ''; list.forEach(e => { const div = document.createElement('div'); div.className = 'entry-card'; div.innerHTML = `<div class="entry-top"><span>${e.date} - ${e.source}</span><span>${money(e.amount)}</span></div><div class="entry-top"><span>${e.type}</span></div>${e.note ? `<div class="entry-note">${e.note}</div>` : ''}`; box.appendChild(div) }); }
+        $('entryForm').onsubmit = (ev) => {
+            ev.preventDefault();
+
+            const obj = {
+                id: Date.now(),
+                type: $('entryType').value,
+                date: $('entryDate').value,
+                source: $('entrySource').value,
+                amount: Number($('entryAmount').value),
+                note: $('entryNote').value
+            };
+
+            entries.push(obj);
+            save(STORAGE_KEYS.entries, entries);
+            updateDashboard();
+            renderEntries();
+
+            alert('Entry Saved');
+
+            // 🔹 Textbox clear karva
+            $('entryForm').reset();
+
+            // 🔹 Date default today set karva
+            $('entryDate').value = new Date().toISOString().slice(0, 10);
+
+            
+        };
+
+
+        $('entryType').onchange = populateSourceSelect;
+        $('balanceCard').onclick = () => { let v = $('balanceValue'); if (v.textContent === '●●●') { v.textContent = money(Number(v.dataset.val || 0)) } else { v.textContent = '●●●' } };
+
+        $('applyFilter').onclick = () => { let t = $('filterType').value; let s = $('filterSource').value; let f = $('filterFrom').value; let to = $('filterTo').value; let fl = entries.filter(e => (t === 'all' || e.type === t) && (s === 'all' || e.source === s) && (!f || e.date >= f) && (!to || e.date <= to)); renderEntries(fl); };
+        $('clearFilter').onclick = () => { renderEntries(); };
+        $('exportPDF').onclick = () => { html2pdf().from($('entriesList')).save('entries.pdf'); };
+
+        function init() { renderSources(); populateSourceSelect(); updateDashboard(); renderEntries(); $('entryDate').value = new Date().toISOString().slice(0, 10); } init();
+    </script>
+</body>
+</html>
