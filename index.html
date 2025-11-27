@@ -231,6 +231,7 @@
                 transform: translateY(-4px);
                 box-shadow: 0 12px 30px rgba(10,37,100,0.12);
             }
+
         .dash-row {
             display: flex;
             justify-content: space-between;
@@ -266,9 +267,6 @@
                 box-shadow: 0 8px 20px rgba(0,0,0,0.15);
             }
 
-
-
-
         /* Make it responsive (smaller on mobile) */
         @media (max-width: 480px) {
             .dash-item {
@@ -294,7 +292,6 @@
             .stat-card.expense .big {
                 color: #b71c1c;
             }
-
     </style>
 </head>
 <body>
@@ -405,15 +402,251 @@
         </div>
     </div>
 
-    <script>
+    <!--
+      Firestore-integrated script (v9 modular).
+      - Uses Firestore collection names: entries, incomeSources, expenseSources
+      - Keeps localStorage as a fallback/backup (no destructive removal)
+      - All firebase-related imports are via module CDN imports.
+    -->
+    <script type="module">
+        // -------------------------
+        // Firebase (v9 modular) imports
+        // -------------------------
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
+        import {
+            getFirestore, collection, addDoc, getDocs, doc,
+            updateDoc, deleteDoc, onSnapshot, query, orderBy, where, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+        // -------------------------
+        // Your Firebase config (from your console)
+        // -------------------------
+        const firebaseConfig = {
+            apiKey: "AIzaSyCRWRJpvaiEE9GGtTP2hxKoTkTACgPwA3M",
+            authDomain: "income-expense-8b3d1.firebaseapp.com",
+            projectId: "income-expense-8b3d1",
+            storageBucket: "income-expense-8b3d1.firebasestorage.app",
+            messagingSenderId: "311565657852",
+            appId: "1:311565657852:web:3dd157fa8354430a295979",
+            measurementId: "G-F0GMF27R2W"
+        };
+
+        // -------------------------
+        // Initialize Firebase and Firestore
+        // -------------------------
+        const app = initializeApp(firebaseConfig);
+        // analytics may fail in some environments (localfile) — guard it
+        try { const analytics = getAnalytics(app); } catch (e) { /* ignore */ }
+        const db = getFirestore(app);
+
+        // -------------------------
+        // App state and helpers
+        // -------------------------
         const STORAGE_KEYS = { entries: 'ie_entries_v2', incomeSources: 'ie_income_sources_v2', expenseSources: 'ie_expense_sources_v2' };
         const defaults = { income: ['Salary', 'Business'], expense: ['Food', 'Rent', 'Transport'] };
-        const $ = id => document.getElementById(id); const money = v => '₹' + Number(v || 0).toFixed(2);
-        function load(k, f) { try { return JSON.parse(localStorage.getItem(k)) || f } catch (e) { return f } }; function save(k, v) { localStorage.setItem(k, JSON.stringify(v)) };
-        let entries = load(STORAGE_KEYS.entries, []); let incomeSources = load(STORAGE_KEYS.incomeSources, defaults.income); let expenseSources = load(STORAGE_KEYS.expenseSources, defaults.expense);
+        const $ = id => document.getElementById(id);
+        const money = v => '₹' + Number(v || 0).toFixed(2);
 
-        function showPage(pid) { ['pageDashboard', 'pageEntries', 'pageSettings', 'pageAddEntry'].forEach(id => $(id).classList.add('hidden')); $(pid).classList.remove('hidden'); }
-        function goBack() { showPage('pageDashboard'); }
+        function loadLocal(k, f) { try { return JSON.parse(localStorage.getItem(k)) || f } catch (e) { return f } }
+        function saveLocal(k, v) { localStorage.setItem(k, JSON.stringify(v)) }
+
+        // Keep in-memory lists synced with Firestore when possible
+        let entries = loadLocal(STORAGE_KEYS.entries, []);
+        let incomeSources = loadLocal(STORAGE_KEYS.incomeSources, defaults.income);
+        let expenseSources = loadLocal(STORAGE_KEYS.expenseSources, defaults.expense);
+
+        // Firestore collection refs
+        const entriesCol = collection(db, 'entries');
+        const incSourcesCol = collection(db, 'incomeSources');
+        const expSourcesCol = collection(db, 'expenseSources');
+
+        // Utility: convert Firestore doc to local entry object (includes id as string)
+        function docToEntry(docSnap) {
+            const data = docSnap.data();
+            return {
+                id: docSnap.id,
+                type: data.type || '',
+                date: data.date || '',
+                source: data.source || '',
+                amount: Number(data.amount || 0),
+                note: data.note || '',
+                createdAt: data.createdAt || null
+            };
+        }
+
+        // -------------------------
+        // Firestore listeners (real-time sync)
+        // -------------------------
+        // Listen for entries collection changes and update local state + UI
+        try {
+            const q = query(entriesCol, orderBy('createdAt', 'desc'));
+            onSnapshot(q, (snapshot) => {
+                const arr = [];
+                snapshot.forEach(docSnap => arr.push(docToEntry(docSnap)));
+                // update in-memory and localStorage
+                entries = arr;
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+                populateFilterSources(); // ensure sources are up-to-date with any changes
+            }, (err) => {
+                console.warn("Firestore entries onSnapshot error:", err);
+            });
+        } catch (e) {
+            console.warn("Realtime listener for entries failed (this may happen when running from file://).", e);
+        }
+
+        // Load sources from Firestore (one-time) and also listen for realtime updates
+        async function loadSourcesFromFirestore() {
+            try {
+                // income sources
+                const incSnap = await getDocs(incSourcesCol);
+                const incList = [];
+                incSnap.forEach(doc => incList.push(doc.data().name));
+                if (incList.length) {
+                    incomeSources = incList;
+                    saveLocal(STORAGE_KEYS.incomeSources, incomeSources);
+                }
+
+                // expense sources
+                const expSnap = await getDocs(expSourcesCol);
+                const expList = [];
+                expSnap.forEach(doc => expList.push(doc.data().name));
+                if (expList.length) {
+                    expenseSources = expList;
+                    saveLocal(STORAGE_KEYS.expenseSources, expenseSources);
+                }
+            } catch (err) {
+                console.warn("Failed to load sources from Firestore:", err);
+            }
+        }
+        // call once on init
+        loadSourcesFromFirestore();
+
+        // -------------------------
+        // CRUD: Create entry (Firestore + local)
+        // -------------------------
+        async function createEntryFirestore(obj) {
+            try {
+                const payload = {
+                    type: obj.type,
+                    date: obj.date,
+                    source: obj.source,
+                    amount: Number(obj.amount),
+                    note: obj.note || '',
+                    createdAt: serverTimestamp()
+                };
+                const docRef = await addDoc(entriesCol, payload);
+                // Firestore onSnapshot will update local entries automatically.
+                return docRef.id;
+            } catch (err) {
+                console.error("Failed to create entry in Firestore:", err);
+                // fallback: push to local only
+                const fallbackId = Date.now().toString();
+                entries.unshift({ ...obj, id: fallbackId });
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+                return fallbackId;
+            }
+        }
+
+        // -------------------------
+        // CRUD: Delete entry
+        // -------------------------
+        async function deleteEntryFirestore(id) {
+            if (!confirm("ખરેખર આ entry delete કરવી છે?")) return;
+            try {
+                await deleteDoc(doc(db, 'entries', id));
+                // onSnapshot will refresh UI. For safety, also remove local fallback immediately:
+                entries = entries.filter(e => e.id !== id);
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+                alert("Entry delete થઈ ગઈ.");
+            } catch (err) {
+                console.error("Failed to delete Firestore doc:", err);
+                // Try local-only delete
+                entries = entries.filter(e => e.id !== id);
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+                alert("Entry delete (local fallback) થઈ ગઈ.");
+            }
+        }
+
+        // -------------------------
+        // CRUD: Update entry
+        // -------------------------
+        async function updateEntryFirestore(id, updatedFields) {
+            try {
+                const docRef = doc(db, 'entries', id);
+                await updateDoc(docRef, updatedFields);
+                // onSnapshot will update UI
+            } catch (err) {
+                console.error("Failed to update Firestore doc:", err);
+                // Local fallback update
+                entries = entries.map(e => e.id === id ? { ...e, ...updatedFields } : e);
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+            }
+        }
+
+        // -------------------------
+        // Sources CRUD (simple: add to Firestore collection and local)
+        // -------------------------
+        async function addIncomeSourceFirestore(name) {
+            try {
+                await addDoc(incSourcesCol, { name });
+                // reload sources after small delay (or rely on future snapshot if implemented)
+                incomeSources.push(name);
+                saveLocal(STORAGE_KEYS.incomeSources, incomeSources);
+                renderSources();
+                populateSourceSelect();
+                populateFilterSources();
+            } catch (err) {
+                console.warn("Failed to add income source to Firestore, falling back to local:", err);
+                incomeSources.push(name);
+                saveLocal(STORAGE_KEYS.incomeSources, incomeSources);
+                renderSources();
+                populateSourceSelect();
+                populateFilterSources();
+            }
+        }
+
+        async function addExpenseSourceFirestore(name) {
+            try {
+                await addDoc(expSourcesCol, { name });
+                expenseSources.push(name);
+                saveLocal(STORAGE_KEYS.expenseSources, expenseSources);
+                renderSources();
+                populateSourceSelect();
+                populateFilterSources();
+            } catch (err) {
+                console.warn("Failed to add expense source to Firestore, falling back to local:", err);
+                expenseSources.push(name);
+                saveLocal(STORAGE_KEYS.expenseSources, expenseSources);
+                renderSources();
+                populateSourceSelect();
+                populateFilterSources();
+            }
+        }
+
+        // -------------------------
+        // UI rendering + logic (kept largely as original but wired to Firestore functions)
+        // -------------------------
+        window.showPage = function (pid) {
+            ['pageDashboard', 'pageEntries', 'pageSettings', 'pageAddEntry']
+                .forEach(id => document.getElementById(id).classList.add('hidden'));
+            document.getElementById(pid).classList.remove('hidden');
+        };
+
+        window.goBack = function () {
+            window.showPage('pageDashboard');
+        };
+
 
         $('btnEntries').onclick = () => { showPage('pageEntries'); renderEntries(); populateFilterSources(); };
         $('btnSettings').onclick = () => { showPage('pageSettings'); renderSources(); };
@@ -423,20 +656,18 @@
             $('incomeSourcesList').innerHTML = '';
             $('expenseSourcesList').innerHTML = '';
 
-            // Helper function
             function createDeleteButton(onclick) {
                 const delBtn = document.createElement('button');
                 delBtn.textContent = 'Delete';
-                delBtn.style.fontSize = '0.7em';      // extra small font
-                delBtn.style.padding = '2px 6px';     // chhoto button
+                delBtn.style.fontSize = '0.7em';
+                delBtn.style.padding = '2px 6px';
                 delBtn.style.marginLeft = '8px';
-                delBtn.style.height = '18px';         // chhoti height
+                delBtn.style.height = '18px';
                 delBtn.style.lineHeight = '14px';
                 delBtn.onclick = onclick;
                 return delBtn;
             }
 
-            // Income Sources
             incomeSources.forEach((s, i) => {
                 const li = document.createElement('li');
                 li.style.display = 'flex';
@@ -445,8 +676,9 @@
 
                 li.appendChild(createDeleteButton(() => {
                     if (confirm(`Delete income source "${s}"?`)) {
+                        // local removal (we do not search & delete specific Firestore doc here)
                         incomeSources.splice(i, 1);
-                        save(STORAGE_KEYS.incomeSources, incomeSources);
+                        saveLocal(STORAGE_KEYS.incomeSources, incomeSources);
                         renderSources();
                         populateSourceSelect();
                         populateFilterSources();
@@ -456,7 +688,6 @@
                 $('incomeSourcesList').appendChild(li);
             });
 
-            // Expense Sources
             expenseSources.forEach((s, i) => {
                 const li = document.createElement('li');
                 li.style.display = 'flex';
@@ -466,7 +697,7 @@
                 li.appendChild(createDeleteButton(() => {
                     if (confirm(`Delete expense source "${s}"?`)) {
                         expenseSources.splice(i, 1);
-                        save(STORAGE_KEYS.expenseSources, expenseSources);
+                        saveLocal(STORAGE_KEYS.expenseSources, expenseSources);
                         renderSources();
                         populateSourceSelect();
                         populateFilterSources();
@@ -476,19 +707,16 @@
                 $('expenseSourcesList').appendChild(li);
             });
         }
+
         $('addIncomeSource').onclick = () => {
             const val = $('newIncomeSource').value.trim();
             if (!val) {
                 alert("કૃપા કરીને income source દાખલ કરો.");
                 return;
             }
-
-            incomeSources.push(val);
-            save(STORAGE_KEYS.incomeSources, incomeSources);
+            // Add to Firestore (best-effort) and local
+            addIncomeSourceFirestore(val);
             $('newIncomeSource').value = "";
-            renderSources();
-            populateSourceSelect();
-            populateFilterSources();
         };
         $('addExpenseSource').onclick = () => {
             const val = $('newExpenseSource').value.trim();
@@ -496,76 +724,85 @@
                 alert("કૃપા કરીને expense source દાખલ કરો.");
                 return;
             }
-
-            expenseSources.push(val);
-            save(STORAGE_KEYS.expenseSources, expenseSources);
+            addExpenseSourceFirestore(val);
             $('newExpenseSource').value = "";
-            renderSources();
-            populateSourceSelect();
-            populateFilterSources();
         };
 
+        function populateSourceSelect() {
+            const sel = $('entrySource'); sel.innerHTML = '';
+            const list = $('entryType').value === 'income' ? incomeSources : expenseSources;
+            list.forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) });
+        }
+        function populateFilterSources() {
+            const sel = $('filterSource'); sel.innerHTML = '<option value="all">બધા Sources</option>';
+            [...incomeSources, ...expenseSources].forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) });
+        }
 
+        function updateDashboard() {
+            let inc = (entries || []).filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount || 0), 0);
+            let exp = (entries || []).filter(e => e.type === 'expense').reduce((s, e) => s + Number(e.amount || 0), 0);
+            $('totalIncome').textContent = money(inc);
+            $('totalExpense').textContent = money(exp);
 
+            const balanceEl = $('balanceValue');
+            balanceEl.dataset.val = inc - exp;
+            // optionally show masked or numeric
+            if (balanceEl.textContent !== '●●●') {
+                balanceEl.textContent = money(inc - exp);
+            }
+        }
 
-        function populateSourceSelect() { const sel = $('entrySource'); sel.innerHTML = ''; const list = $('entryType').value === 'income' ? incomeSources : expenseSources; list.forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
-        function populateFilterSources() { const sel = $('filterSource'); sel.innerHTML = '<option value="all">બધા Sources</option>';[...incomeSources, ...expenseSources].forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
-
-        function updateDashboard() { let inc = entries.filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0); let exp = entries.filter(e => e.type === 'expense').reduce((s, e) => s + Number(e.amount), 0); $('totalIncome').textContent = money(inc); $('totalExpense').textContent = money(exp); $('balanceValue').dataset.val = inc - exp; }
         function renderEntries(list = entries) {
             const box = $('entriesList');
             box.innerHTML = '';
 
-            list.forEach(e => {
+            (list || []).forEach(e => {
                 const div = document.createElement('div');
                 div.className = 'entry-card';
 
+                // ensure id present
+                const entryId = e.id || (e._localId || Date.now().toString());
+
                 div.innerHTML = `
-            <div class="entry-top">
-                <span>${e.date} - ${e.source}</span>
-                <span>${money(e.amount)}</span>
-            </div>
+                <div class="entry-top">
+                    <span>${e.date} - ${e.source}</span>
+                    <span>${money(e.amount)}</span>
+                </div>
 
-            <div class="entry-top">
-                <span>${e.type}</span>
+                <div class="entry-top">
+                    <span>${e.type}</span>
 
-                <!-- 🔴 Delete Button -->
-                <button 
-                    style="background:#ff4d4d;color:white;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px"
-                    onclick="deleteEntry(${e.id})">
-                    Delete
-                </button>
-            </div>
+                    <!-- Delete Button -->
+                    <button
+                        style="background:#ff4d4d;color:white;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px"
+                        data-entry-id="${entryId}">
+                        Delete
+                    </button>
+                </div>
 
-            ${e.note ? `<div class="entry-note">${e.note}</div>` : ''}
-        `;
+                ${e.note ? `<div class="entry-note">${e.note}</div>` : ''}
+            `;
+
+                // attach click handler for delete button
+                const delBtn = div.querySelector('button[data-entry-id]');
+                if (delBtn) {
+                    delBtn.onclick = () => { deleteEntryFirestore(entryId); };
+                }
 
                 box.appendChild(div);
             });
         }
 
-        function deleteEntry(id) {
-            if (!confirm("ખરેખર આ entry delete કરવી છે?")) return;
-
-            // Entry remove
-            entries = entries.filter(e => e.id !== id);
-
-            // Save
-            save(STORAGE_KEYS.entries, entries);
-
-            // UI Update
-            updateDashboard();
-            renderEntries();
-
-            alert("Entry delete થઈ ગઈ.");
+        // wired to Firestore delete function above
+        async function deleteEntry(id) {
+            await deleteEntryFirestore(id);
         }
 
-
-        $('entryForm').onsubmit = (ev) => {
+        // Handle form submit -> create entry in Firestore
+        $('entryForm').onsubmit = async (ev) => {
             ev.preventDefault();
 
             const obj = {
-                id: Date.now(),
                 type: $('entryType').value,
                 date: $('entryDate').value,
                 source: $('entrySource').value,
@@ -573,31 +810,46 @@
                 note: $('entryNote').value
             };
 
-            entries.push(obj);
-            save(STORAGE_KEYS.entries, entries);
-            updateDashboard();
-            renderEntries();
+            // create in Firestore (or fallback local)
+            const newId = await createEntryFirestore(obj);
+
+            // If Firestore failed to produce a doc (fallback), ensure UI updated
+            if (!entries.find(en => en.id === newId)) {
+                // Prepend local fallback
+                const fallbackEntry = { ...obj, id: newId };
+                entries.unshift(fallbackEntry);
+                saveLocal(STORAGE_KEYS.entries, entries);
+                updateDashboard();
+                renderEntries();
+            }
 
             alert('Entry Saved');
 
-            // 🔹 Textbox clear karva
             $('entryForm').reset();
-
-            // 🔹 Date default today set karva
             $('entryDate').value = new Date().toISOString().slice(0, 10);
-
-            
         };
-
 
         $('entryType').onchange = populateSourceSelect;
         $('balanceCard').onclick = () => { let v = $('balanceValue'); if (v.textContent === '●●●') { v.textContent = money(Number(v.dataset.val || 0)) } else { v.textContent = '●●●' } };
 
-        $('applyFilter').onclick = () => { let t = $('filterType').value; let s = $('filterSource').value; let f = $('filterFrom').value; let to = $('filterTo').value; let fl = entries.filter(e => (t === 'all' || e.type === t) && (s === 'all' || e.source === s) && (!f || e.date >= f) && (!to || e.date <= to)); renderEntries(fl); };
+        $('applyFilter').onclick = () => {
+            let t = $('filterType').value; let s = $('filterSource').value; let f = $('filterFrom').value; let to = $('filterTo').value;
+            let fl = (entries || []).filter(e => (t === 'all' || e.type === t) && (s === 'all' || e.source === s) && (!f || e.date >= f) && (!to || e.date <= to));
+            renderEntries(fl);
+        };
         $('clearFilter').onclick = () => { renderEntries(); };
         $('exportPDF').onclick = () => { html2pdf().from($('entriesList')).save('entries.pdf'); };
 
-        function init() { renderSources(); populateSourceSelect(); updateDashboard(); renderEntries(); $('entryDate').value = new Date().toISOString().slice(0, 10); } init();
+        // Init: render UI from local state and attempt to populate selects
+        function init() {
+            renderSources();
+            populateSourceSelect();
+            updateDashboard();
+            renderEntries();
+            $('entryDate').value = new Date().toISOString().slice(0, 10);
+        }
+
+        init();
     </script>
 </body>
 </html>
