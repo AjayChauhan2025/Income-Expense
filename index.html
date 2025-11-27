@@ -476,13 +476,91 @@
                 $('expenseSourcesList').appendChild(li);
             });
         }
+        $('addIncomeSource').onclick = () => {
+            const val = $('newIncomeSource').value.trim();
+            if (!val) {
+                alert("કૃપા કરીને income source દાખલ કરો.");
+                return;
+            }
+
+            incomeSources.push(val);
+            save(STORAGE_KEYS.incomeSources, incomeSources);
+            $('newIncomeSource').value = "";
+            renderSources();
+            populateSourceSelect();
+            populateFilterSources();
+        };
+        $('addExpenseSource').onclick = () => {
+            const val = $('newExpenseSource').value.trim();
+            if (!val) {
+                alert("કૃપા કરીને expense source દાખલ કરો.");
+                return;
+            }
+
+            expenseSources.push(val);
+            save(STORAGE_KEYS.expenseSources, expenseSources);
+            $('newExpenseSource').value = "";
+            renderSources();
+            populateSourceSelect();
+            populateFilterSources();
+        };
+
+
 
 
         function populateSourceSelect() { const sel = $('entrySource'); sel.innerHTML = ''; const list = $('entryType').value === 'income' ? incomeSources : expenseSources; list.forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
         function populateFilterSources() { const sel = $('filterSource'); sel.innerHTML = '<option value="all">બધા Sources</option>';[...incomeSources, ...expenseSources].forEach(s => { let op = document.createElement('option'); op.value = s; op.textContent = s; sel.appendChild(op) }); }
 
         function updateDashboard() { let inc = entries.filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0); let exp = entries.filter(e => e.type === 'expense').reduce((s, e) => s + Number(e.amount), 0); $('totalIncome').textContent = money(inc); $('totalExpense').textContent = money(exp); $('balanceValue').dataset.val = inc - exp; }
-        function renderEntries(list = entries) { const box = $('entriesList'); box.innerHTML = ''; list.forEach(e => { const div = document.createElement('div'); div.className = 'entry-card'; div.innerHTML = `<div class="entry-top"><span>${e.date} - ${e.source}</span><span>${money(e.amount)}</span></div><div class="entry-top"><span>${e.type}</span></div>${e.note ? `<div class="entry-note">${e.note}</div>` : ''}`; box.appendChild(div) }); }
+        function renderEntries(list = entries) {
+            const box = $('entriesList');
+            box.innerHTML = '';
+
+            list.forEach(e => {
+                const div = document.createElement('div');
+                div.className = 'entry-card';
+
+                div.innerHTML = `
+            <div class="entry-top">
+                <span>${e.date} - ${e.source}</span>
+                <span>${money(e.amount)}</span>
+            </div>
+
+            <div class="entry-top">
+                <span>${e.type}</span>
+
+                <!-- 🔴 Delete Button -->
+                <button 
+                    style="background:#ff4d4d;color:white;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px"
+                    onclick="deleteEntry(${e.id})">
+                    Delete
+                </button>
+            </div>
+
+            ${e.note ? `<div class="entry-note">${e.note}</div>` : ''}
+        `;
+
+                box.appendChild(div);
+            });
+        }
+
+        function deleteEntry(id) {
+            if (!confirm("ખરેખર આ entry delete કરવી છે?")) return;
+
+            // Entry remove
+            entries = entries.filter(e => e.id !== id);
+
+            // Save
+            save(STORAGE_KEYS.entries, entries);
+
+            // UI Update
+            updateDashboard();
+            renderEntries();
+
+            alert("Entry delete થઈ ગઈ.");
+        }
+
+
         $('entryForm').onsubmit = (ev) => {
             ev.preventDefault();
 
